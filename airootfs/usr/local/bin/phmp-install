@@ -1,0 +1,132 @@
+#!/bin/bash
+clear
+
+echo "=================================================="
+echo "          PHMP-OS ADVANCED INSTALLER              "
+echo "=================================================="
+echo ""
+
+echo "--- STEP 1: CHOOSE BOOT MODE ---"
+echo "1) UEFI (Recommended for Modern PCs)"
+echo "2) MBR / BIOS (For Older PCs)"
+read -p "Select Boot Mode (1 or 2): " BOOT_MODE
+echo ""
+
+echo "--- STEP 2: SELECT TARGET DRIVE ---"
+lsblk -d -n -o NAME,SIZE
+echo ""
+read -p "Enter drive name to install (e.g., sda / nvme0n1): " DRIVE
+if [ -z "$DRIVE" ]; then
+    echo "Error: No drive selected. Exiting."
+    exit 1
+fi
+TARGET_DRIVE="/dev/$DRIVE"
+echo ""
+
+echo "--- STEP 3: DISK PARTITIONING ---"
+echo "1) Automatic Partitioning (Erase entire drive)"
+echo "2) Custom Partitioning (Run cfdisk manually)"
+read -p "Select Partitioning Method (1 or 2): " PART_METHOD
+echo ""
+
+echo "WARNING: All data on $TARGET_DRIVE will be permanently destroyed!"
+read -p "Are you sure you want to proceed? (y/N): " CONFIRM
+if [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ]; then
+    echo "Installation cancelled."
+    exit 1
+fi
+
+if [ "$PART_METHOD" == "1" ]; then
+    echo "Running automatic partitioning..."
+    sgdisk --zap-all $TARGET_DRIVE
+    if [ "$BOOT_MODE" == "1" ]; then
+        sgdisk --new=1:0:+500M --typecode=1:ef00 --change-name=1:"EFI" $TARGET_DRIVE
+        sgdisk --new=2:0:0 --typecode=2:8300 --change-name=2:"ROOT" $TARGET_DRIVE
+        if [[ "$DRIVE" == nvme* ]]; then
+            PART_EFI="${TARGET_DRIVE}p1"
+            PART_ROOT="${TARGET_DRIVE}p2"
+        else
+            PART_EFI="${TARGET_DRIVE}1"
+            PART_ROOT="${TARGET_DRIVE}2"
+        fi
+    else
+        sgdisk --new=1:0:+1M --typecode=1:ef02 --change-name=1:"BIOSBOOT" $TARGET_DRIVE
+        sgdisk --new=2:0:0 --typecode=2:8300 --change-name=2:"ROOT" $TARGET_DRIVE
+        if [[ "$DRIVE" == nvme* ]]; then
+            PART_ROOT="${TARGET_DRIVE}p2"
+        else
+            PART_ROOT="${TARGET_DRIVE}2"
+        fi
+    fi
+else
+    echo "Launching cfdisk for custom partitioning..."
+    cfdisk $TARGET_DRIVE
+    echo ""
+    lsblk $TARGET_DRIVE
+    echo ""
+    if [ "$BOOT_MODE" == "1" ]; then
+        read -p "Enter your EFI partition path (e.g., /dev/sda1): " PART_EFI
+    fi
+    read -p "Enter your ROOT partition path (e.g., /dev/sda2): " PART_ROOT
+fi
+echo ""
+
+echo "--- STEP 4: FORMATTING PARTITIONS ---"
+if [ "$BOOT_MODE" == "1" ]; then
+    mkfs.vfat -F32 $PART_EFI
+fi
+mkfs.ext4 -F $PART_ROOT
+echo ""
+
+echo "--- STEP 5: MOUNTING FILESYSTEMS ---"
+mkdir -p /mnt/target
+mount $PART_ROOT /mnt/target
+if [ "$BOOT_MODE" == "1" ]; then
+    mkdir -p /mnt/target/boot
+    mount $PART_EFI /mnt/target/boot
+fi
+echo ""
+
+echo "--- STEP 6: USER ACCOUNT CONFIGURATION ---"
+read -p "Enter Root Password: " ROOT_PASS
+read -p "Enter New User Account Name: " USER_NAME
+read -p "Enter Password for $USER_NAME: " USER_PASS
+echo ""
+
+echo "--- STEP 7: COPYING SYSTEM FILES ---"
+echo "Installing PHMP-OS onto the drive. Please wait..."
+rsync -aAXv --exclude=/proc/* --exclude=/sys/* --exclude=/dev/* --exclude=/run/* --exclude=/boot/* --exclude=/mnt/* --exclude=/tmp/* / /mnt/target/
+echo ""
+
+echo "--- STEP 8: CONFIGURING USER ACCOUNTS & SYSTEM ---"
+echo "root:$ROOT_PASS" | chroot /mnt/target chpasswd
+chroot /mnt/target useradd -m -g users -G wheel,audio,video,storage -s /bin/bash $USER_NAME
+echo "$USER_NAME:$USER_PASS" | chroot /mnt/target chpasswd
+echo "%wheel ALL=(ALL:ALL) ALL" >> /mnt/target/etc/sudoers
+echo ""
+
+echo "--- STEP 9: INSTALLING BOOTLOADER (GRUB) ---"
+if [ "$BOOT_MODE" == "1" ]; then
+    chroot /mnt/target grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=PHMP-OS --removable
+else
+    chroot /mnt/target grub-install --target=i386-pc $TARGET_DRIVE
+fi
+chroot /mnt/target grub-mkconfig -o /boot/grub/grub.cfg
+echo ""
+
+echo "--- STEP 10: UNMOUNTING DRIVES ---"
+umount -R /mnt/target
+echo ""
+
+echo "=================================================="
+echo "         PHMP-OS INSTALLED SUCCESSFULLY!          "
+echo "=================================================="
+echo ""
+read -p "Would you like to reboot the system now? (y/N): " REBOOT_CHOICE
+
+if [ "$REBOOT_CHOICE" == "y" ] || [ "$REBOOT_CHOICE" == "Y" ]; then
+    echo "Rebooting now..."
+    reboot
+else
+    echo "Installation complete. You can manually reboot later."
+fi
