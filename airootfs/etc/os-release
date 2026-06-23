@@ -1,0 +1,7 @@
+NAME="PHMP-OS"
+VERSION="2026.1"
+ID=phmp_os
+ID_LIKE=arch
+PRETTY_NAME="PHMP-OS Linux"
+ANSI_COLOR="0;36"
+HOME_URL="https://github.com/ph-gemini/PHMP-OS"
