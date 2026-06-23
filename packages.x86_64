@@ -25,13 +25,10 @@ xf86-video-nouveau
 xf86-video-fbdev
 xf86-video-vesa
 i3-wm
-i3status
-i3lock
 dmenu
 rxvt-unicode
 ttc-iosevka
 alacritty
-kitty
 pipewire
 pipewire-audio
 pipewire-alsa
