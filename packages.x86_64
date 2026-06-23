@@ -37,3 +37,9 @@ pipewire-jack
 wireplumber
 alsa-utils
 pamixer
+util-linux
+shadow
+sudo
+grub
+rsync
+gptfdisk
