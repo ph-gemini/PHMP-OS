@@ -1,1 +1,27 @@
+name: Build PHMP-OS
 
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-iso:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Run Archiso in Docker
+      run: |
+        docker run --privileged --rm -v ${{ github.workspace }}:/workspace archlinux:latest bash -c "
+          pacman -Syu --noconfirm archiso
+          cd /workspace
+          mkarchiso -v -w ./work_dir -o ./out_dir ./my_os
+        "
+
+    - name: Upload Finished ISO
+      uses: actions/upload-artifact@v4
+      with:
+        name: PHMP-OS-ISO-Image
+        path: out_dir/*.iso
